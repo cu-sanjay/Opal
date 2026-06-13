@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0A0A"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true">
+
+    <!-- Header Bar -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="12dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true">
+
+            <View
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginEnd="12dp"
+                android:background="@drawable/bg_glowing_opal" />
+
+            <TextView
+                android:id="@+id/logo_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Opal"
+                android:textColor="#FFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold|italic"
+                android:fontFamily="serif"
+                android:letterSpacing="0.04" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/settings_button"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:padding="4dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_settings"
+            android:contentDescription="Settings"
+            android:clickable="true"
+            android:focusable="true" />
+    </RelativeLayout>
+
+    <!-- Clipboard Auto-Detect Banner -->
+    <LinearLayout
+        android:id="@+id/clipboard_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@drawable/bg_glowing_opal"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="10dp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Found copiable link"
+                android:textColor="#50FFFFFF"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textAllCaps="true" />
+
+            <TextView
+                android:id="@+id/clipboard_url_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="https://..."
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:singleLine="true"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/clipboard_save_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:textColor="#000000"
+            android:background="@drawable/bg_pill_active"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <View
+            android:layout_width="12dp"
+            android:layout_height="1dp" />
+
+        <ImageView
+            android:id="@+id/clipboard_dismiss_btn"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:padding="4dp"
+            android:alpha="0.6"
+            android:src="@drawable/ic_delete"
+            android:contentDescription="Dismiss"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Manual Quick Add Link Input Card -->
+    <LinearLayout
+        android:id="@+id/quick_add_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp">
+
+        <EditText
+            android:id="@+id/quick_add_edit_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:hint="Paste or enter a URL to save..."
+            android:textColorHint="#50FFFFFF"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif"
+            android:singleLine="true"
+            android:layout_marginStart="8dp" />
+
+        <TextView
+            android:id="@+id/quick_add_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:textColor="#000000"
+            android:background="@drawable/bg_pill_active"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <!-- Search Box -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/bg_search_bar"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:elevation="2dp">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginEnd="12dp"
+            android:src="@android:drawable/ic_menu_search"
+            android:tint="#80FFFFFF"
+            android:contentDescription="@null" />
+
+        <EditText
+            android:id="@+id/search_edit_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:hint="@string/search_hint"
+            android:textColorHint="#60FFFFFF"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif"
+            android:singleLine="true"
+            android:imeOptions="actionSearch" />
+    </LinearLayout>
+
+    <!-- Platform Filter Scroll -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:clipToPadding="false"
+        android:layout_marginBottom="16dp">
+
+        <LinearLayout
+            android:id="@+id/filters_container"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/filter_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="All"
+                android:textColor="#000000"
+                android:background="@drawable/bg_pill_active"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:layout_marginEnd="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true"/>
+
+            <TextView
+                android:id="@+id/filter_youtube"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="YouTube"
+                android:textColor="#80FFFFFF"
+                android:background="@drawable/bg_pill_inactive"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:layout_marginEnd="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/filter_instagram"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Instagram"
+                android:textColor="#80FFFFFF"
+                android:background="@drawable/bg_pill_inactive"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:layout_marginEnd="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/filter_x"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="X"
+                android:textColor="#80FFFFFF"
+                android:background="@drawable/bg_pill_inactive"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:layout_marginEnd="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/filter_reddit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Reddit"
+                android:textColor="#80FFFFFF"
+                android:background="@drawable/bg_pill_inactive"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:layout_marginEnd="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/filter_web"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Web"
+                android:textColor="#80FFFFFF"
+                android:background="@drawable/bg_pill_inactive"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:clickable="true"
+                android:focusable="true" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Main Content Stack -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- Recycler View -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/links_recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:clipToPadding="false"
+            android:scrollbars="none" />
+
+        <!-- Empty State HUD -->
+        <LinearLayout
+            android:id="@+id/empty_state_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="24dp"
+            android:visibility="gone">
+
+            <View
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_glowing_opal"
+                android:alpha="0.8"
+                android:layout_marginBottom="20dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/empty_items_title"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/empty_items_desc"
+                android:textColor="#80FFFFFF"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif"
+                android:gravity="center" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

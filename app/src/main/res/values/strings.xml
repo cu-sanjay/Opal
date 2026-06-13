@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Opal</string>
+    <string name="search_hint">Search links or titles</string>
+    <string name="saved_to_opal">Saved to Opal</string>
+    <string name="already_in_opal">Already in Opal</string>
+    <string name="invalid_link">Invalid link shared</string>
+    <string name="empty_items_title">No Saved Links</string>
+    <string name="empty_items_desc">Share links from other apps to collect them here.</string>
+</resources>

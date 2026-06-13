@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#121212"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Handler bar for bottom sheet look -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:background="#40FFFFFF"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Title Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="20dp">
+
+        <View
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_glowing_opal" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Opal Settings"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:fontFamily="serif" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Preferences"
+        android:textColor="#50FFFFFF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textAllCaps="true"
+        android:letterSpacing="0.08"
+        android:layout_marginBottom="10dp" />
+
+    <!-- Clipboard Toggle Preference Option -->
+    <LinearLayout
+        android:id="@+id/pref_clipboard_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp"
+        android:layout_marginBottom="20dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Listen to Clipboard on startup"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Suggests saving URLs copied in other apps as soon as you open Opal"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="sans-serif" />
+        </LinearLayout>
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/pref_clipboard_switch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Community & GitHub Code Card -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Community"
+        android:textColor="#50FFFFFF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:textAllCaps="true"
+        android:letterSpacing="0.08"
+        android:layout_marginBottom="10dp" />
+
+    <LinearLayout
+        android:id="@+id/github_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_glass_card"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Opal on GitHub"
+            android:textColor="#80E9D4"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="https://github.com/cu-sanjay/Opal"
+            android:textColor="#70FFFFFF"
+            android:textSize="13sp"
+            android:fontFamily="sans-serif"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open-source link collection engine. We warmly welcome user suggestions, issues, and Pull Requests to build the cleanest saver."
+            android:textColor="#90FFFFFF"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif"
+            android:lineSpacingMultiplier="1.1" />
+    </LinearLayout>
+
+    <!-- Footer info -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Opal v1.0 • Built with zero-friction"
+        android:textColor="#40FFFFFF"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="8dp" />
+
+</LinearLayout>
