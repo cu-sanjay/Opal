@@ -26,4 +26,7 @@ public interface SavedLinkDao {
 
     @Query("DELETE FROM saved_links WHERE id = :id")
     void deleteById(int id);
+
+    @Query("UPDATE saved_links SET url = :newUrl WHERE id = :id")
+    void updateUrl(int id, String newUrl);
 }

@@ -11,6 +11,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.resource.drawable.DrawableTransitionOptions;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -48,85 +49,74 @@ public class SavedLinksAdapter extends RecyclerView.Adapter<SavedLinksAdapter.Li
         holder.titleText.setText(link.getTitle());
         holder.domainText.setText(link.getDomain());
 
-        // Platform detection and vector layout allocation
-        int platformDrawableId = R.drawable.ic_platform_chrome;
-        String platform = link.getPlatform();
-        if (platform != null) {
-            switch (platform) {
-                case "YouTube":
-                    platformDrawableId = R.drawable.ic_platform_youtube;
-                    break;
-                case "Instagram":
-                    platformDrawableId = R.drawable.ic_platform_instagram;
-                    break;
-                case "X":
-                    platformDrawableId = R.drawable.ic_platform_x;
-                    break;
-                case "Reddit":
-                    platformDrawableId = R.drawable.ic_platform_reddit;
-                    break;
-            }
-        }
-
+        // Resolve platform drawable for the small domain-row icon
+        int platformDrawableId = platformIcon(link.getPlatform());
         holder.platformLogo.setImageResource(platformDrawableId);
-        holder.placeholderLogo.setImageResource(platformDrawableId);
 
-        // Load OpenGraph Image view
-        if (link.getImageUrl() != null && !link.getImageUrl().trim().isEmpty()) {
+        String imageUrl   = link.getImageUrl()   != null ? link.getImageUrl().trim()   : "";
+        String faviconUrl = link.getFaviconUrl()  != null ? link.getFaviconUrl().trim() : "";
+
+        if (!imageUrl.isEmpty()) {
+            // ── Show OG/preview image ────────────────────────────────────────────
             holder.linkImage.setVisibility(View.VISIBLE);
             holder.placeholderLogo.setVisibility(View.GONE);
             Glide.with(context)
-                    .load(link.getImageUrl())
+                    .load(imageUrl)
                     .centerCrop()
+                    .transition(DrawableTransitionOptions.withCrossFade())
                     .error(android.R.color.transparent)
                     .into(holder.linkImage);
         } else {
+            // ── No OG image — try favicon, fall back to platform icon ────────────
             holder.linkImage.setVisibility(View.GONE);
             holder.placeholderLogo.setVisibility(View.VISIBLE);
+
+            if (!faviconUrl.isEmpty()) {
+                Glide.with(context)
+                        .load(faviconUrl)
+                        .placeholder(platformDrawableId)
+                        .error(platformDrawableId)
+                        .transition(DrawableTransitionOptions.withCrossFade())
+                        .into(holder.placeholderLogo);
+            } else {
+                holder.placeholderLogo.setImageResource(platformDrawableId);
+            }
         }
 
-        // Action when a card is clicked (launch the browser)
-        holder.itemView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openUrlInBrowser(link.getUrl());
-            }
-        });
+        holder.itemView.setOnClickListener(v -> openUrlInBrowser(link.getUrl()));
+        holder.openButton.setOnClickListener(v -> openUrlInBrowser(link.getUrl()));
 
-        // Click open action
-        holder.openButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openUrlInBrowser(link.getUrl());
-            }
-        });
-
-        // Click copy action
-        holder.copyButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                    android.content.ClipData clip = android.content.ClipData.newPlainText("Opal Link", link.getUrl());
-                    if (clipboard != null) {
-                        clipboard.setPrimaryClip(clip);
-                        android.widget.Toast.makeText(context, "Parsed link copied!", android.widget.Toast.LENGTH_SHORT).show();
-                    }
-                } catch (Exception e) {
-                    // fall back
+        holder.copyButton.setOnClickListener(v -> {
+            try {
+                android.content.ClipboardManager clipboard =
+                        (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                android.content.ClipData clip =
+                        android.content.ClipData.newPlainText("Opal Link", link.getUrl());
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    android.widget.Toast.makeText(context, "Link copied!", android.widget.Toast.LENGTH_SHORT).show();
                 }
-            }
+            } catch (Exception e) { /* ignore */ }
         });
 
-        // Click delete action
-        holder.deleteButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (actionListener != null) {
-                    actionListener.onDelete(link);
-                }
-            }
+        holder.deleteButton.setOnClickListener(v -> {
+            if (actionListener != null) actionListener.onDelete(link);
         });
+    }
+
+    private int platformIcon(String platform) {
+        if (platform == null) return R.drawable.ic_platform_chrome;
+        switch (platform) {
+            case "YouTube":   return R.drawable.ic_platform_youtube;
+            case "Instagram": return R.drawable.ic_platform_instagram;
+            case "X":         return R.drawable.ic_platform_x;
+            case "Reddit":    return R.drawable.ic_platform_reddit;
+            case "Spotify":   return R.drawable.ic_platform_spotify;
+            case "TikTok":    return R.drawable.ic_platform_tiktok;
+            case "LinkedIn":  return R.drawable.ic_platform_linkedin;
+            case "Pinterest": return R.drawable.ic_platform_pinterest;
+            default:          return R.drawable.ic_platform_chrome;
+        }
     }
 
     private void openUrlInBrowser(String url) {
@@ -156,14 +146,14 @@ public class SavedLinksAdapter extends RecyclerView.Adapter<SavedLinksAdapter.Li
 
         LinkViewHolder(@NonNull View itemView) {
             super(itemView);
-            linkImage = itemView.findViewById(R.id.link_image);
+            linkImage       = itemView.findViewById(R.id.link_image);
             placeholderLogo = itemView.findViewById(R.id.platform_placeholder_logo);
-            platformLogo = itemView.findViewById(R.id.platform_logo);
-            titleText = itemView.findViewById(R.id.link_title);
-            domainText = itemView.findViewById(R.id.link_domain);
-            copyButton = itemView.findViewById(R.id.copy_button);
-            openButton = itemView.findViewById(R.id.open_button);
-            deleteButton = itemView.findViewById(R.id.delete_button);
+            platformLogo    = itemView.findViewById(R.id.platform_logo);
+            titleText       = itemView.findViewById(R.id.link_title);
+            domainText      = itemView.findViewById(R.id.link_domain);
+            copyButton      = itemView.findViewById(R.id.copy_button);
+            openButton      = itemView.findViewById(R.id.open_button);
+            deleteButton    = itemView.findViewById(R.id.delete_button);
         }
     }
 }
