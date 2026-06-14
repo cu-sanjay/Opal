@@ -18,36 +18,97 @@ public class MetadataHelper {
         public String faviconUrl = "";
         public String domain = "";
         public String platform = "Web";
+        public String resolvedUrl = ""; // Final URL after following redirects
     }
 
-    private static OkHttpClient buildClient() {
+    // ── HTTP helpers ──────────────────────────────────────────────────────────────
+
+    private static OkHttpClient buildClient(int connectSec, int readSec) {
         return new OkHttpClient.Builder()
                 .followRedirects(true)
                 .followSslRedirects(true)
-                .connectTimeout(12, TimeUnit.SECONDS)
-                .readTimeout(12, TimeUnit.SECONDS)
+                .connectTimeout(connectSec, TimeUnit.SECONDS)
+                .readTimeout(readSec, TimeUnit.SECONDS)
                 .build();
     }
 
+    /**
+     * Follows redirects and returns the final destination URL.
+     * Handles a.co → amazon, pin.it → pinterest, bit.ly, t.co, amzn.to etc.
+     */
+    public static String resolveToFinalUrl(String url) {
+        // Try HEAD first (faster — no body download)
+        try {
+            OkHttpClient client = buildClient(8, 5);
+            Request req = new Request.Builder()
+                    .url(url)
+                    .head()
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build();
+            try (Response r = client.newCall(req).execute()) {
+                String finalUrl = r.request().url().toString();
+                if (!finalUrl.isEmpty() && !finalUrl.equals(url)) return finalUrl;
+            }
+        } catch (Exception ignored) { }
+
+        // Fallback: GET (some servers reject HEAD)
+        try {
+            OkHttpClient client = buildClient(8, 5);
+            Request req = new Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build();
+            try (Response r = client.newCall(req).execute()) {
+                if (r.body() != null) r.body().close();
+                String finalUrl = r.request().url().toString();
+                if (!finalUrl.isEmpty()) return finalUrl;
+            }
+        } catch (Exception ignored) { }
+
+        return url;
+    }
+
+    private static String httpGet(String url, String userAgent) {
+        try {
+            Request req = new Request.Builder()
+                    .url(url)
+                    .header("User-Agent", userAgent)
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .build();
+            try (Response r = buildClient(12, 12).newCall(req).execute()) {
+                if (r.isSuccessful() && r.body() != null) return r.body().string();
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "httpGet failed: " + url + " — " + e.getMessage());
+        }
+        return null;
+    }
+
+    // ── Entry point ───────────────────────────────────────────────────────────────
+
     public static Metadata fetchMetadata(String urlString) {
         Metadata meta = new Metadata();
-        if (urlString == null || urlString.trim().isEmpty()) {
-            return meta;
-        }
+        if (urlString == null || urlString.trim().isEmpty()) return meta;
 
-        meta.domain = getDomainName(urlString);
+        // Step 1: Resolve short/redirect URLs (a.co, pin.it, bit.ly, t.co, amzn.to …)
+        String resolvedUrl = resolveToFinalUrl(urlString);
+        meta.resolvedUrl = resolvedUrl;
+        String url = resolvedUrl; // work with final URL from here
+
+        meta.domain   = getDomainName(url);
         meta.platform = detectPlatform(meta.domain);
 
         // ── 1. YouTube ────────────────────────────────────────────────────────────
-        String ytVideoId = extractYoutubeVideoId(urlString);
+        String ytVideoId = extractYoutubeVideoId(url);
         if (ytVideoId != null) {
-            meta.platform = "YouTube";
-            meta.imageUrl = "https://img.youtube.com/vi/" + ytVideoId + "/hqdefault.jpg";
-            meta.domain = "youtube.com";
+            meta.platform   = "YouTube";
+            meta.imageUrl   = "https://img.youtube.com/vi/" + ytVideoId + "/hqdefault.jpg";
+            meta.domain     = "youtube.com";
             meta.faviconUrl = "https://www.youtube.com/favicon.ico";
 
             try {
-                String oembedUrl = "https://www.youtube.com/oembed?url=" + URLEncoder.encode(urlString, "UTF-8") + "&format=json";
+                String oembedUrl = "https://www.youtube.com/oembed?url="
+                        + URLEncoder.encode(url, "UTF-8") + "&format=json";
                 String json = httpGet(oembedUrl, "Mozilla/5.0");
                 if (json != null) {
                     String ytTitle  = extractJsonString(json, "title");
@@ -61,75 +122,86 @@ public class MetadataHelper {
                         }
                     }
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "YouTube oembed: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.e(TAG, "YouTube oembed: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) meta.title = "YouTube Video";
             return meta;
         }
 
         // ── 2. Reddit ─────────────────────────────────────────────────────────────
-        if (urlString.contains("reddit.com") || urlString.contains("redd.it")) {
-            meta.platform = "Reddit";
-            meta.domain   = "reddit.com";
+        if (url.contains("reddit.com") || url.contains("redd.it")) {
+            meta.platform   = "Reddit";
+            meta.domain     = "reddit.com";
             meta.faviconUrl = "https://www.reddit.com/favicon.ico";
 
             try {
-                String cleanUrl = urlString.contains("?")
-                        ? urlString.substring(0, urlString.indexOf("?")) : urlString;
+                String cleanUrl = url.contains("?")
+                        ? url.substring(0, url.indexOf("?")) : url;
                 if (!cleanUrl.endsWith("/")) cleanUrl += "/";
                 String jsonUrl = cleanUrl + ".json";
 
-                String json = httpGet(jsonUrl, "Mozilla/5.0 OpalApp/1.0 (Android link saver)");
+                String json = httpGet(jsonUrl, "Mozilla/5.0 OpalApp/1.4 (Android link saver)");
                 if (json != null) {
-                    String subName    = extractJsonString(json, "subreddit");
-                    String postTitle  = extractJsonString(json, "title");
-                    String mediaUrl   = extractJsonString(json, "url_overridden_by_dest");
-                    String thumbUrl   = extractJsonString(json, "thumbnail");
-
-                    // Best quality preview: preview.images[0].source.url (HTML-entity encoded in JSON)
+                    String subreddit = extractJsonString(json, "subreddit");
+                    String postTitle = extractJsonString(json, "title");
+                    String author    = extractJsonString(json, "author");
+                    String mediaUrl  = extractJsonString(json, "url_overridden_by_dest");
+                    String thumbUrl  = extractJsonString(json, "thumbnail");
                     String previewImage = extractRedditPreviewImage(json);
 
-                    if (!postTitle.isEmpty()) meta.title  = decodeHtmlEntities(decodeUnicodeEscapes(postTitle));
-                    if (!subName.isEmpty())   meta.domain = "r/" + decodeUnicodeEscapes(subName);
+                    // Determine page type from URL structure
+                    boolean isComment = isRedditCommentPage(url);
+                    boolean isUser    = url.contains("/u/") || url.contains("/user/");
 
+                    if (!postTitle.isEmpty()) {
+                        meta.title = decodeHtmlEntities(decodeUnicodeEscapes(postTitle));
+                    }
+
+                    // Domain shows: "r/subreddit • u/author" or "Reddit Profile • u/author"
+                    if (isUser) {
+                        String userPattern = extractRedditUsername(url);
+                        meta.domain = "Reddit Profile • u/" + (userPattern.isEmpty() ? "user" : userPattern);
+                        meta.title  = meta.title.isEmpty() ? "u/" + userPattern + " — Reddit" : meta.title;
+                    } else if (!subreddit.isEmpty()) {
+                        String authorTag = (!author.isEmpty() && !author.equals("[deleted]"))
+                                ? " • u/" + decodeUnicodeEscapes(author) : "";
+                        String typeTag   = isComment ? " • Comment" : "";
+                        meta.domain = "r/" + decodeUnicodeEscapes(subreddit) + authorTag + typeTag;
+                    }
+
+                    // Image priority: preview > direct media image > thumbnail
                     if (!previewImage.isEmpty()) {
                         meta.imageUrl = previewImage;
                     } else {
                         String mUrl = mediaUrl.replace("\\/", "/");
-                        if (mUrl.matches(".*\\.(jpg|jpeg|png|webp|gif)$")) {
+                        if (mUrl.matches("(?i).*\\.(jpg|jpeg|png|webp|gif)(\\?.*)?$")) {
                             meta.imageUrl = mUrl;
                         } else if (!thumbUrl.isEmpty()
-                                && !thumbUrl.equals("default")
-                                && !thumbUrl.equals("self")
-                                && !thumbUrl.equals("nsfw")
-                                && !thumbUrl.equals("image")
-                                && thumbUrl.startsWith("http")) {
+                                && !thumbUrl.equals("default") && !thumbUrl.equals("self")
+                                && !thumbUrl.equals("nsfw")    && !thumbUrl.equals("image")
+                                && !thumbUrl.equals("spoiler") && thumbUrl.startsWith("http")) {
                             meta.imageUrl = thumbUrl.replace("\\/", "/");
                         }
                     }
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Reddit: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.e(TAG, "Reddit: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) meta.title = "Reddit Post";
             return meta;
         }
 
         // ── 3. Instagram ──────────────────────────────────────────────────────────
-        if (urlString.contains("instagram.com")) {
+        if (url.contains("instagram.com")) {
             meta.platform   = "Instagram";
             meta.domain     = "instagram.com";
             meta.faviconUrl = "https://www.instagram.com/favicon.ico";
 
             String shortcode = "";
-            Matcher mShort = Pattern.compile("/(?:p|reel|tv)/([\\w-]+)").matcher(urlString);
+            Matcher mShort = Pattern.compile("/(?:p|reel|tv)/([\\w-]+)").matcher(url);
             if (mShort.find()) shortcode = mShort.group(1);
 
             String username = "";
-            Matcher mUser = Pattern.compile("instagram\\.com/([\\w\\._-]+)").matcher(urlString);
+            Matcher mUser = Pattern.compile("instagram\\.com/([\\w\\._-]+)").matcher(url);
             if (mUser.find()) {
                 String p = mUser.group(1);
                 if (!p.equals("p") && !p.equals("reel") && !p.equals("tv")
@@ -140,26 +212,25 @@ public class MetadataHelper {
             }
             if (!username.isEmpty()) meta.domain = "Instagram • @" + username;
 
-            // Try public oembed (works for public posts/reels without auth)
+            // Try public oEmbed
             try {
                 String oembedUrl = "https://www.instagram.com/oembed/?url="
-                        + URLEncoder.encode(urlString, "UTF-8") + "&format=json&maxwidth=640";
-                String json = httpGet(oembedUrl, "Mozilla/5.0 (compatible; OpalApp/1.0)");
+                        + URLEncoder.encode(url, "UTF-8") + "&format=json&maxwidth=640";
+                String json = httpGet(oembedUrl, "Mozilla/5.0 (compatible; OpalApp/1.4)");
                 if (json != null) {
-                    String thumb    = extractJsonString(json, "thumbnail_url");
-                    String author   = extractJsonString(json, "author_name");
-                    String ogTitle  = extractJsonString(json, "title");
+                    String thumb   = extractJsonString(json, "thumbnail_url");
+                    String author  = extractJsonString(json, "author_name");
+                    String igTitle = extractJsonString(json, "title");
                     if (!thumb.isEmpty())   meta.imageUrl = thumb.replace("\\/", "/");
-                    if (!author.isEmpty() && username.isEmpty()) meta.domain = "Instagram • @" + decodeUnicodeEscapes(author);
-                    if (!ogTitle.isEmpty()) meta.title = decodeHtmlEntities(decodeUnicodeEscapes(ogTitle));
+                    if (!author.isEmpty() && username.isEmpty())
+                        meta.domain = "Instagram • @" + decodeUnicodeEscapes(author);
+                    if (!igTitle.isEmpty()) meta.title = decodeHtmlEntities(decodeUnicodeEscapes(igTitle));
                 }
-            } catch (Exception e) {
-                Log.d(TAG, "Instagram oembed: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.d(TAG, "Instagram oembed: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) {
                 if (!shortcode.isEmpty()) {
-                    meta.title = urlString.contains("/reel/") ? "Instagram Reel" : "Instagram Post";
+                    meta.title = url.contains("/reel/") ? "Instagram Reel" : "Instagram Post";
                 } else if (!username.isEmpty()) {
                     meta.title = "@" + username + " on Instagram";
                 } else {
@@ -170,191 +241,324 @@ public class MetadataHelper {
         }
 
         // ── 4. TikTok ─────────────────────────────────────────────────────────────
-        if (urlString.contains("tiktok.com")) {
+        if (url.contains("tiktok.com")) {
             meta.platform   = "TikTok";
             meta.domain     = "tiktok.com";
             meta.faviconUrl = "https://www.tiktok.com/favicon.ico";
 
             try {
-                String oembedUrl = "https://www.tiktok.com/oembed?url=" + URLEncoder.encode(urlString, "UTF-8");
+                String oembedUrl = "https://www.tiktok.com/oembed?url="
+                        + URLEncoder.encode(url, "UTF-8");
                 String json = httpGet(oembedUrl, "Mozilla/5.0");
                 if (json != null) {
-                    String tTitle  = extractJsonString(json, "title");
-                    String tAuthor = extractJsonString(json, "author_name");
-                    String tThumb  = extractJsonString(json, "thumbnail_url");
-                    if (!tTitle.isEmpty())  meta.title    = decodeHtmlEntities(decodeUnicodeEscapes(tTitle));
-                    if (!tAuthor.isEmpty()) meta.domain   = "TikTok • @" + decodeUnicodeEscapes(tAuthor);
-                    if (!tThumb.isEmpty())  meta.imageUrl = tThumb.replace("\\/", "/");
+                    String t  = extractJsonString(json, "title");
+                    String a  = extractJsonString(json, "author_name");
+                    String th = extractJsonString(json, "thumbnail_url");
+                    if (!t.isEmpty())  meta.title    = decodeHtmlEntities(decodeUnicodeEscapes(t));
+                    if (!a.isEmpty())  meta.domain   = "TikTok • @" + decodeUnicodeEscapes(a);
+                    if (!th.isEmpty()) meta.imageUrl = th.replace("\\/", "/");
                 }
-            } catch (Exception e) {
-                Log.d(TAG, "TikTok oembed: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.d(TAG, "TikTok oembed: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) meta.title = "TikTok Video";
             return meta;
         }
 
         // ── 5. Spotify ────────────────────────────────────────────────────────────
-        if (urlString.contains("spotify.com")) {
+        if (url.contains("spotify.com")) {
             meta.platform   = "Spotify";
-            meta.domain     = "Spotify";
             meta.faviconUrl = "https://open.spotify.com/favicon.ico";
 
-            if      (urlString.contains("/track/"))    meta.domain = "Spotify Track";
-            else if (urlString.contains("/album/"))    meta.domain = "Spotify Album";
-            else if (urlString.contains("/artist/"))   meta.domain = "Spotify Artist";
-            else if (urlString.contains("/playlist/")) meta.domain = "Spotify Playlist";
-            else if (urlString.contains("/episode/"))  meta.domain = "Spotify Podcast";
+            if      (url.contains("/track/"))    meta.domain = "Spotify Track";
+            else if (url.contains("/album/"))    meta.domain = "Spotify Album";
+            else if (url.contains("/artist/"))   meta.domain = "Spotify Artist";
+            else if (url.contains("/playlist/")) meta.domain = "Spotify Playlist";
+            else if (url.contains("/episode/"))  meta.domain = "Spotify Podcast";
+            else if (url.contains("/show/"))     meta.domain = "Spotify Show";
+            else                                 meta.domain = "Spotify";
 
             try {
-                String oembedUrl = "https://open.spotify.com/oembed?url=" + URLEncoder.encode(urlString, "UTF-8");
+                String oembedUrl = "https://open.spotify.com/oembed?url="
+                        + URLEncoder.encode(url, "UTF-8");
                 String json = httpGet(oembedUrl, "Mozilla/5.0");
                 if (json != null) {
-                    String sTitle = extractJsonString(json, "title");
-                    String sThumb = extractJsonString(json, "thumbnail_url");
-                    if (!sTitle.isEmpty()) meta.title    = decodeHtmlEntities(decodeUnicodeEscapes(sTitle));
-                    if (!sThumb.isEmpty()) meta.imageUrl = sThumb.replace("\\/", "/");
+                    String t  = extractJsonString(json, "title");
+                    String th = extractJsonString(json, "thumbnail_url");
+                    if (!t.isEmpty())  meta.title    = decodeHtmlEntities(decodeUnicodeEscapes(t));
+                    if (!th.isEmpty()) meta.imageUrl = th.replace("\\/", "/");
                 }
-            } catch (Exception e) {
-                Log.d(TAG, "Spotify oembed: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.d(TAG, "Spotify oembed: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) meta.title = "Spotify";
             return meta;
         }
 
-        // ── 6. X / Twitter ───────────────────────────────────────────────────────
-        if (urlString.contains("twitter.com") || urlString.contains("x.com")) {
+        // ── 6. X / Twitter ────────────────────────────────────────────────────────
+        if (url.contains("twitter.com") || url.contains("x.com")) {
             meta.platform   = "X";
             meta.domain     = "x.com";
             meta.faviconUrl = "https://x.com/favicon.ico";
 
-            // Twitter publish oembed for author name
             try {
                 String oembedUrl = "https://publish.twitter.com/oembed?url="
-                        + URLEncoder.encode(urlString, "UTF-8") + "&format=json";
+                        + URLEncoder.encode(url, "UTF-8") + "&format=json";
                 String json = httpGet(oembedUrl, "Mozilla/5.0");
                 if (json != null) {
                     String tAuthor = extractJsonString(json, "author_name");
                     if (!tAuthor.isEmpty()) meta.domain = "X • @" + decodeUnicodeEscapes(tAuthor);
                 }
-            } catch (Exception e) {
-                Log.d(TAG, "Twitter oembed: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.d(TAG, "Twitter oembed: " + e.getMessage()); }
 
-            // Scrape og:title and og:image — but filter profile pictures
+            // Scrape og: tags but reject profile photos
             try {
-                String html = httpGet(urlString, "Mozilla/5.0 (compatible; Twitterbot/1.0)");
+                String html = httpGet(url, "Mozilla/5.0 (compatible; Twitterbot/1.0)");
                 if (html != null) {
                     String ogTitle = extractMetaTag(html, "property=\"og:title\"");
                     if (ogTitle.isEmpty()) ogTitle = extractMetaTag(html, "name=\"twitter:title\"");
-                    if (!ogTitle.isEmpty() && meta.title.isEmpty()) meta.title = decodeHtmlEntities(ogTitle);
+                    if (!ogTitle.isEmpty() && meta.title.isEmpty())
+                        meta.title = decodeHtmlEntities(ogTitle);
 
                     String ogImage = extractMetaTag(html, "property=\"og:image\"");
                     if (ogImage.isEmpty()) ogImage = extractMetaTag(html, "name=\"twitter:image\"");
-                    // Skip profile images — they contain /profile_images/ in the path
+                    // Only use media images — never profile pictures
                     if (!ogImage.isEmpty()
                             && !ogImage.contains("/profile_images/")
                             && !ogImage.contains("abs.twimg.com/sticky/")) {
                         meta.imageUrl = ogImage;
                     }
                 }
-            } catch (Exception e) {
-                Log.d(TAG, "X page scrape: " + e.getMessage());
-            }
+            } catch (Exception e) { Log.d(TAG, "X scrape: " + e.getMessage()); }
 
             if (meta.title.isEmpty()) meta.title = "X Post";
             return meta;
         }
 
-        // ── 7. LinkedIn ───────────────────────────────────────────────────────────
-        if (urlString.contains("linkedin.com")) {
-            meta.platform   = "LinkedIn";
-            meta.domain     = "linkedin.com";
-            meta.faviconUrl = "https://www.linkedin.com/favicon.ico";
-            // Fall through to general scraper — LinkedIn serves og:image for public pages
-        }
+        // ── 7. Amazon ─────────────────────────────────────────────────────────────
+        if (isAmazonUrl(url)) {
+            meta.platform   = "Amazon";
+            meta.faviconUrl = "https://www.amazon.com/favicon.ico";
+            meta.domain     = "Amazon";
 
-        // ── 8. Pinterest ──────────────────────────────────────────────────────────
-        if (urlString.contains("pinterest.com") || urlString.contains("pin.it")) {
-            meta.platform   = "Pinterest";
-            meta.domain     = "pinterest.com";
-            meta.faviconUrl = "https://www.pinterest.com/favicon.ico";
-            // Fall through to general scraper
-        }
+            // Try to extract ASIN for clean domain label
+            String asin = extractAmazonAsin(url);
+            String amazonDomain = getDomainName(url);
+            meta.domain = "Amazon" + (amazonDomain.contains("amazon.") ? " • " + amazonDomain : "");
 
-        // ── General Web Scraper ───────────────────────────────────────────────────
-        try {
-            String html = httpGet(urlString,
+            // General scraper — Amazon has very good og: tags for product pages
+            String html = httpGet(url,
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             if (html != null) {
                 String ogTitle = extractMetaTag(html, "property=\"og:title\"");
-                if (ogTitle.isEmpty()) ogTitle = extractMetaTag(html, "name=\"twitter:title\"");
                 if (ogTitle.isEmpty()) ogTitle = extractTitleTag(html);
                 if (!ogTitle.isEmpty()) meta.title = decodeHtmlEntities(ogTitle);
 
                 String ogImage = extractMetaTag(html, "property=\"og:image\"");
-                if (ogImage.isEmpty()) ogImage = extractMetaTag(html, "name=\"twitter:image\"");
-                if (!ogImage.isEmpty() && !ogImage.contains("/profile_images/")) {
-                    meta.imageUrl = ogImage;
+                if (!ogImage.isEmpty()) meta.imageUrl = ogImage;
+
+                meta.faviconUrl = extractFaviconUrl(html, url);
+            }
+
+            if (meta.title.isEmpty()) meta.title = asin.isEmpty() ? "Amazon Product" : "Amazon • " + asin;
+            return meta;
+        }
+
+        // ── 8. GitHub ─────────────────────────────────────────────────────────────
+        if (url.contains("github.com")) {
+            meta.platform   = "GitHub";
+            meta.faviconUrl = "https://github.com/favicon.ico";
+
+            // Parse user/repo from URL
+            Matcher ghMatcher = Pattern.compile("github\\.com/([\\w._-]+)(?:/([\\w._-]+))?").matcher(url);
+            if (ghMatcher.find()) {
+                String ghUser = ghMatcher.group(1);
+                String ghRepo = ghMatcher.group(2);
+                meta.domain = (ghRepo != null && !ghRepo.isEmpty())
+                        ? ghUser + "/" + ghRepo : "GitHub • @" + ghUser;
+            } else {
+                meta.domain = "github.com";
+            }
+
+            // GitHub has excellent og: social cards — use general scraper
+            String html = httpGet(url,
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            if (html != null) {
+                String ogTitle = extractMetaTag(html, "property=\"og:title\"");
+                if (!ogTitle.isEmpty()) meta.title = decodeHtmlEntities(ogTitle);
+
+                String ogImage = extractMetaTag(html, "property=\"og:image\"");
+                if (!ogImage.isEmpty()) meta.imageUrl = ogImage;
+            }
+
+            if (meta.title.isEmpty()) meta.title = meta.domain;
+            return meta;
+        }
+
+        // ── 9. Medium / Substack ──────────────────────────────────────────────────
+        if (url.contains("medium.com") || url.contains("substack.com")) {
+            meta.platform   = url.contains("substack.com") ? "Substack" : "Medium";
+            meta.domain     = url.contains("substack.com") ? "substack.com" : "medium.com";
+            meta.faviconUrl = "https://" + meta.domain + "/favicon.ico";
+            // Fall through to general scraper — both serve great og: tags
+        }
+
+        // ── 10. Twitch ────────────────────────────────────────────────────────────
+        if (url.contains("twitch.tv")) {
+            meta.platform   = "Twitch";
+            meta.faviconUrl = "https://www.twitch.tv/favicon.ico";
+
+            Matcher twMatcher = Pattern.compile("twitch\\.tv/([\\w]+)").matcher(url);
+            if (twMatcher.find()) {
+                meta.domain = "Twitch • " + twMatcher.group(1);
+            } else {
+                meta.domain = "twitch.tv";
+            }
+            // Fall through to general scraper
+        }
+
+        // ── 11. Threads ───────────────────────────────────────────────────────────
+        if (url.contains("threads.net")) {
+            meta.platform   = "Threads";
+            meta.faviconUrl = "https://www.threads.net/favicon.ico";
+
+            Matcher thrMatcher = Pattern.compile("threads\\.net/@([\\w._]+)").matcher(url);
+            if (thrMatcher.find()) {
+                meta.domain = "Threads • @" + thrMatcher.group(1);
+            } else {
+                meta.domain = "threads.net";
+            }
+            // Fall through to general scraper
+        }
+
+        // ── 12. LinkedIn ──────────────────────────────────────────────────────────
+        if (url.contains("linkedin.com")) {
+            meta.platform   = "LinkedIn";
+            meta.domain     = "linkedin.com";
+            meta.faviconUrl = "https://www.linkedin.com/favicon.ico";
+            // Fall through
+        }
+
+        // ── 13. Pinterest ─────────────────────────────────────────────────────────
+        if (url.contains("pinterest.com") || url.contains("pin.it")) {
+            meta.platform   = "Pinterest";
+            meta.domain     = "pinterest.com";
+            meta.faviconUrl = "https://www.pinterest.com/favicon.ico";
+            // Fall through
+        }
+
+        // ── General Web Scraper ───────────────────────────────────────────────────
+        try {
+            String html = httpGet(url,
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            if (html != null) {
+                if (meta.title.isEmpty()) {
+                    String ogTitle = extractMetaTag(html, "property=\"og:title\"");
+                    if (ogTitle.isEmpty()) ogTitle = extractMetaTag(html, "name=\"twitter:title\"");
+                    if (ogTitle.isEmpty()) ogTitle = extractTitleTag(html);
+                    if (!ogTitle.isEmpty()) meta.title = decodeHtmlEntities(ogTitle);
                 }
 
-                if (meta.faviconUrl == null || meta.faviconUrl.isEmpty()) {
-                    meta.faviconUrl = extractFaviconUrl(html, urlString);
+                if (meta.imageUrl.isEmpty()) {
+                    String ogImage = extractMetaTag(html, "property=\"og:image\"");
+                    if (ogImage.isEmpty()) ogImage = extractMetaTag(html, "name=\"twitter:image\"");
+                    if (!ogImage.isEmpty() && !ogImage.contains("/profile_images/"))
+                        meta.imageUrl = ogImage;
+                }
+
+                if (meta.faviconUrl.isEmpty()) {
+                    meta.faviconUrl = extractFaviconUrl(html, url);
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "General scraper: " + e.getMessage());
-        }
+        } catch (Exception e) { Log.e(TAG, "General scraper: " + e.getMessage()); }
 
         if (meta.title.isEmpty()) meta.title = meta.domain;
 
-        // Favicon fallback: always ensure we at least have /favicon.ico
         if (meta.faviconUrl == null || meta.faviconUrl.isEmpty()) {
             try {
-                java.net.URI uri = new java.net.URI(urlString);
+                java.net.URI uri = new java.net.URI(url);
                 meta.faviconUrl = uri.getScheme() + "://" + uri.getHost() + "/favicon.ico";
-            } catch (Exception e) { /* ignore */ }
+            } catch (Exception ignored) { }
         }
 
         return meta;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────────
+    // ── Platform helpers ──────────────────────────────────────────────────────────
 
-    private static String httpGet(String url, String userAgent) {
-        try {
-            OkHttpClient client = buildClient();
-            Request request = new Request.Builder()
-                    .url(url)
-                    .header("User-Agent", userAgent)
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .build();
-            try (Response response = client.newCall(request).execute()) {
-                if (response.isSuccessful() && response.body() != null) {
-                    return response.body().string();
-                }
-            }
-        } catch (Exception e) {
-            Log.d(TAG, "httpGet failed for " + url + ": " + e.getMessage());
-        }
-        return null;
+    public static String detectPlatform(String domain) {
+        if (domain == null) return "Web";
+        String d = domain.toLowerCase();
+        if (d.contains("youtube.com") || d.contains("youtu.be"))           return "YouTube";
+        if (d.contains("instagram.com"))                                    return "Instagram";
+        if (d.contains("twitter.com") || d.contains("x.com"))              return "X";
+        if (d.contains("reddit.com")  || d.contains("redd.it"))            return "Reddit";
+        if (d.contains("spotify.com"))                                      return "Spotify";
+        if (d.contains("tiktok.com"))                                       return "TikTok";
+        if (d.contains("linkedin.com"))                                     return "LinkedIn";
+        if (d.contains("pinterest.com") || d.contains("pin.it"))           return "Pinterest";
+        if (isAmazonDomain(d))                                              return "Amazon";
+        if (d.contains("github.com"))                                       return "GitHub";
+        if (d.contains("medium.com"))                                       return "Medium";
+        if (d.contains("substack.com"))                                     return "Substack";
+        if (d.contains("twitch.tv"))                                        return "Twitch";
+        if (d.contains("threads.net"))                                      return "Threads";
+        return "Web";
     }
+
+    private static boolean isAmazonUrl(String url) {
+        String d = getDomainName(url).toLowerCase();
+        return isAmazonDomain(d);
+    }
+
+    private static boolean isAmazonDomain(String d) {
+        return d.contains("amazon.") || d.equals("a.co")
+                || d.contains("amzn.to") || d.contains("amzn.eu")
+                || d.contains("amzn.in") || d.contains("amzn.com");
+    }
+
+    private static String extractAmazonAsin(String url) {
+        try {
+            Matcher m = Pattern.compile("/(?:dp|gp/product|ASIN)/([A-Z0-9]{10})").matcher(url);
+            if (m.find()) return m.group(1);
+        } catch (Exception ignored) { }
+        return "";
+    }
+
+    private static boolean isRedditCommentPage(String url) {
+        // Comment page has 6+ segments: /r/sub/comments/id/slug/comment_id/
+        try {
+            String path = new java.net.URI(url).getPath();
+            String[] parts = path.split("/");
+            int nonEmpty = 0;
+            for (String p : parts) if (!p.isEmpty()) nonEmpty++;
+            return nonEmpty >= 6;
+        } catch (Exception ignored) { }
+        return false;
+    }
+
+    private static String extractRedditUsername(String url) {
+        try {
+            Matcher m = Pattern.compile("/(?:u|user)/([\\w_-]+)").matcher(url);
+            if (m.find()) return m.group(1);
+        } catch (Exception ignored) { }
+        return "";
+    }
+
+    // ── Metadata extractors ───────────────────────────────────────────────────────
 
     private static String extractRedditPreviewImage(String json) {
         try {
-            // preview.images[0].source.url  —  the value is HTML-entity-encoded inside JSON
             Pattern p = Pattern.compile(
                     "\"preview\"\\s*:\\s*\\{.*?\"images\"\\s*:\\s*\\[\\s*\\{.*?" +
                     "\"source\"\\s*:\\s*\\{\\s*\"url\"\\s*:\\s*\"([^\"]+)\"",
                     Pattern.DOTALL);
             Matcher m = p.matcher(json);
             if (m.find()) {
-                // URL has HTML-encoded ampersands (&amp;) and escaped slashes
                 return decodeHtmlEntities(m.group(1).replace("\\/", "/"));
             }
-        } catch (Exception e) { /* ignore */ }
+        } catch (Exception ignored) { }
         return "";
     }
 
@@ -364,7 +568,7 @@ public class MetadataHelper {
                     "\"" + Pattern.quote(key) + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
             Matcher m = p.matcher(json);
             if (m.find()) return m.group(1);
-        } catch (Exception e) { /* ignore */ }
+        } catch (Exception ignored) { }
         return "";
     }
 
@@ -372,82 +576,70 @@ public class MetadataHelper {
         try {
             java.net.URI uri = new java.net.URI(url);
             String domain = uri.getHost();
-            if (domain != null) {
-                return domain.startsWith("www.") ? domain.substring(4) : domain;
-            }
-        } catch (Exception e) { /* ignore */ }
+            if (domain != null) return domain.startsWith("www.") ? domain.substring(4) : domain;
+        } catch (Exception ignored) { }
         return "web";
-    }
-
-    public static String detectPlatform(String domain) {
-        if (domain == null) return "Web";
-        String lower = domain.toLowerCase();
-        if (lower.contains("youtube.com") || lower.contains("youtu.be"))      return "YouTube";
-        if (lower.contains("instagram.com"))                                   return "Instagram";
-        if (lower.contains("twitter.com") || lower.contains("x.com"))         return "X";
-        if (lower.contains("reddit.com")  || lower.contains("redd.it"))       return "Reddit";
-        if (lower.contains("spotify.com"))                                     return "Spotify";
-        if (lower.contains("tiktok.com"))                                      return "TikTok";
-        if (lower.contains("linkedin.com"))                                    return "LinkedIn";
-        if (lower.contains("pinterest.com") || lower.contains("pin.it"))      return "Pinterest";
-        return "Web";
     }
 
     private static String extractMetaTag(String html, String attributeQuery) {
         try {
-            Pattern metaPattern = Pattern.compile("<meta\\s+([^>]+?)\\s*/?>", Pattern.CASE_INSENSITIVE);
+            Pattern metaPattern = Pattern.compile("<meta\\s+([^>]+?)\\s*/?>",
+                    Pattern.CASE_INSENSITIVE);
             Matcher matcher = metaPattern.matcher(html);
             while (matcher.find()) {
                 String attrs = matcher.group(1);
-                String cleanQuery = attributeQuery.replace("\"", "").replace("'", "");
-                String cleanAttrs = attrs.replace("\"", "").replace("'", "");
-                if (cleanAttrs.toLowerCase().contains(cleanQuery.toLowerCase())) {
-                    Pattern cp = Pattern.compile("content\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
+                String cleanQ = attributeQuery.replace("\"", "").replace("'", "");
+                String cleanA = attrs.replace("\"", "").replace("'", "");
+                if (cleanA.toLowerCase().contains(cleanQ.toLowerCase())) {
+                    Pattern cp = Pattern.compile(
+                            "content\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
                     Matcher cm = cp.matcher(attrs);
                     if (cm.find()) return cm.group(1);
                 }
             }
-        } catch (Exception e) { /* ignore */ }
+        } catch (Exception ignored) { }
         return "";
     }
 
     private static String extractTitleTag(String html) {
         try {
-            Pattern p = Pattern.compile("<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern p = Pattern.compile(
+                    "<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
             Matcher m = p.matcher(html);
             if (m.find()) return m.group(1).trim();
-        } catch (Exception e) { /* ignore */ }
+        } catch (Exception ignored) { }
         return "";
     }
 
     private static String extractFaviconUrl(String html, String originalUrl) {
         try {
-            // Match <link> tags with rel containing "icon" — handle any attribute order
+            // Match any <link> tag whose rel contains "icon"
             Pattern p = Pattern.compile("<link\\s+([^>]+?)\\s*/?>", Pattern.CASE_INSENSITIVE);
             Matcher m = p.matcher(html);
             while (m.find()) {
-                String attrs = m.group(1);
+                String attrs      = m.group(1);
                 String attrsLower = attrs.toLowerCase();
-                if (attrsLower.contains("rel=") && (attrsLower.contains("\"icon\"")
-                        || attrsLower.contains("'icon'")
-                        || attrsLower.contains("shortcut icon"))) {
-                    Pattern hp = Pattern.compile("href\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
+                if (attrsLower.contains("rel=") && (
+                        attrsLower.contains("\"icon\"") || attrsLower.contains("'icon'") ||
+                        attrsLower.contains("shortcut icon") || attrsLower.contains("apple-touch-icon"))) {
+                    Pattern hp = Pattern.compile(
+                            "href\\s*=\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
                     Matcher hm = hp.matcher(attrs);
                     if (hm.find()) {
                         String href = hm.group(1);
-                        if (href.startsWith("http")) return href;
-                        if (href.startsWith("//"))   return "https:" + href;
+                        if (href.startsWith("http"))  return href;
+                        if (href.startsWith("//"))    return "https:" + href;
                         java.net.URI uri = new java.net.URI(originalUrl);
                         String base = uri.getScheme() + "://" + uri.getHost();
                         return href.startsWith("/") ? base + href : base + "/" + href;
                     }
                 }
             }
-        } catch (Exception e) { /* ignore */ }
+        } catch (Exception ignored) { }
         try {
             java.net.URI uri = new java.net.URI(originalUrl);
             return uri.getScheme() + "://" + uri.getHost() + "/favicon.ico";
-        } catch (Exception e) { return ""; }
+        } catch (Exception ignored) { return ""; }
     }
 
     public static String extractYoutubeVideoId(String url) {
@@ -458,6 +650,8 @@ public class MetadataHelper {
         Matcher m = p.matcher(url);
         return m.find() ? m.group(1) : null;
     }
+
+    // ── Text decoders ─────────────────────────────────────────────────────────────
 
     public static String decodeHtmlEntities(String text) {
         if (text == null) return "";
@@ -473,6 +667,7 @@ public class MetadataHelper {
                    .replaceAll("(?i)&middot;", "•")
                    .replaceAll("(?i)&ndash;",  "–")
                    .replaceAll("(?i)&mdash;",  "—")
+                   .replaceAll("(?i)&nbsp;",   " ")
                    .trim();
     }
 
@@ -488,12 +683,9 @@ public class MetadataHelper {
             }
             m.appendTail(sb);
             return sb.toString()
-                    .replace("\\/", "/")
-                    .replace("\\\"", "\"")
-                    .replace("\\'", "'")
-                    .replace("\\n", "\n")
-                    .replace("\\r", "\r")
-                    .replace("\\t", "\t");
-        } catch (Exception e) { return text; }
+                    .replace("\\/", "/").replace("\\\"", "\"")
+                    .replace("\\'", "'").replace("\\n", "\n")
+                    .replace("\\r", "\r").replace("\\t", "\t");
+        } catch (Exception ignored) { return text; }
     }
 }
